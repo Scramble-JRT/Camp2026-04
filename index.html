@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>布団が吹っ飛んだ号</title>
+<style>
+  body { margin:0; min-height:100vh; display:flex; flex-direction:column; align-items:center;
+         justify-content:center; gap:1vh; background:#000; color:#fff;
+         font-family:'Zen Maru Gothic','M PLUS Rounded 1c','Yu Gothic UI','Meiryo',sans-serif; text-align:center; }
+  h1 { margin:0; font-size:7vw; font-weight:700; }
+  .row { font-size:5.5vw; line-height:1.3; white-space:nowrap; }
+  .row .item { margin:0 1.5vw; }
+  .edit { font:inherit; width:2.6em; text-align:center; color:#fff; background:transparent;
+          border:none; border-bottom:2px solid #888; border-radius:0; padding:0; }
+  .edit::placeholder { color:#fff; opacity:1; }
+  .edit:focus { outline:none; border-bottom-color:#fff; }
+  .edit::-webkit-inner-spin-button, .edit::-webkit-outer-spin-button { -webkit-appearance:none; margin:0; }
+  .edit { -moz-appearance:textfield; appearance:textfield; }
+  #message { font-size:11vw; font-weight:700; min-height:1.3em; margin:6vh 0; }
+  button { font:inherit; font-size:1.8vw; background:#fff; color:#000; border:none; padding:1.2vw 4vw; cursor:pointer; }
+  #status { font-size:1.6vw; color:#888; margin-top:1vh; }
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;700&display=swap">
+</head>
+<body>
+  <h1>ふとんがふっとんだ号</h1>
+  <div class="row">センサー温度:<span id="sensorView">--</span>℃</div>
+  <div class="row">
+    <span class="item">標準:<input id="tempInput" class="edit" type="text" inputmode="numeric" autocomplete="off" placeholder="--">℃</span>
+    <span class="item">範囲:<input id="rangeInput" class="edit" type="text" inputmode="numeric" autocomplete="off" placeholder="--">℃</span>
+  </div>
+  <div id="message"></div>
+  <button id="connect">micro:bitに接続</button>
+  <div id="status">未接続</div>
+
+<script>
+let Temp = null;        // キーボードで入力した値
+let TempRange = null;   // キーボードで入力した値
+let sensorTemp = null;  // micro:bit の温度センサーの値
+
+const sensorView = document.getElementById('sensorView');
+const tempInput = document.getElementById('tempInput');
+const rangeInput = document.getElementById('rangeInput');
+const message = document.getElementById('message');
+const statusView = document.getElementById('status');
+
+function update() {
+  sensorView.textContent = sensorTemp === null ? '--' : Math.round(sensorTemp);  // 小数点以下なし
+  let text = '', color = '#fff';
+  if (sensorTemp !== null && Temp !== null && TempRange !== null) {
+    if (sensorTemp >= Temp + TempRange) { text = 'めくる'; color = '#3b9dff'; }       // 暑い: 青
+    else if (sensorTemp <= Temp - TempRange) { text = 'かける'; color = '#ff9a1f'; }  // 寒い: オレンジ
+  }
+  message.textContent = text;
+  message.style.color = color;
+}
+
+// 整数だけ受け付ける（マイナスは可）
+function num(el) { const v = parseInt(el.value, 10); return isNaN(v) ? null : v; }
+function commit() { Temp = num(tempInput); TempRange = num(rangeInput); update(); }
+for (const el of [tempInput, rangeInput]) {
+  el.addEventListener('input', () => {
+    el.value = el.value.replace(/(?!^-)[^0-9]/g, '');
+    commit();
+  });
+}
+
+// micro:bit V2 (USBシリアル) から "T:25" を受信
+document.getElementById('connect').addEventListener('click', async () => {
+  if (!('serial' in navigator)) { statusView.textContent = 'Chrome か Edge で開いてください'; return; }
+  try {
+    const port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 115200 });
+    statusView.textContent = '接続中';
+    const reader = port.readable.pipeThrough(new TextDecoderStream()).getReader();
+    let buf = '';
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += value;
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, i).trim();
+        if (line.startsWith('T:')) {
+          const t = Number(line.slice(2));
+          if (!isNaN(t)) { sensorTemp = t; update(); }
+        }
+        buf = buf.slice(i + 1);
+      }
+    }
+  } catch (err) {
+    statusView.textContent = '接続エラー: ' + err.message;
+  }
+});
+</script>
+</body>
+</html>
